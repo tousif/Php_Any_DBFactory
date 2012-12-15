@@ -1,0 +1,375 @@
+<?php
+   
+     include_once("daoFactory/MysqlFactory.php");   
+     require_once("interfaces/BaseDao.php");
+     include("transferObjects/Swing.php");
+     
+     include_once("transferObjects/Composite.php");
+     
+     class MysqlDao implements BaseDao
+     {
+     	
+     	private $connection;
+       	
+     	
+     	
+     	//create connection 
+        function createConnection()
+        {
+        	$connection=MysqlFactory::getConnection();
+        }     	
+        
+        
+        //select database
+        function selectDatabase()
+        {
+        	MysqlFactory::selectDatabase("facebookswings",$this->connection);
+        }
+        
+        
+        //insert facebook user 
+     	function insertUser($userID,$userFullName,$userFname,$userLname,$userLocation,$userGender)
+     	{
+     		  if(mysql_query("select userID from fbuser where userID=".$userID))
+     		  { 
+     		 $sql=mysql_query("INSERT INTO fbuser VALUES('$userID','$userFullName','$userFname','$userLname','$userLocation','$userGender')");
+              if (!$sql)
+              {
+            	  die();
+            	  error_log("inserting to fbuser table error".mysql_error(),0);
+              }
+     		  }
+     	}
+     	
+     	
+     	
+     	function getByCategory($catID)
+     	{
+                
+     		
+     	}
+     	
+     	
+     	// Retrieve all swing from db
+     	function getAllSwings()
+     	{
+     		if(!file_exists('cache/swings/swings.txt'))
+     		{
+     		$allSwing=array();
+     		$result=mysql_query("select * from swings order by createdTime desc");
+     		if (!$result)
+              {
+            	  error_log("table extraction error ".mysql_error(),0);
+              }
+     		while($rows = mysql_fetch_array($result,MYSQL_ASSOC))
+     		{
+     			array_push($allSwing,$rows);
+     		}
+     		
+     		$cache=serialize($allSwing);
+     		$fp = fopen("cache/swings/swings.txt","w");
+            fputs($fp, $cache);
+            fclose($fp);
+     		return $allSwing;
+     		
+     		}
+     		else
+     		{
+     	
+     			return unserialize(implode('',file('cache/swings/swings.txt')));
+     			
+     			
+     		}
+     	}
+     	
+     	
+     	// invoke stored proc to return all categories
+     	
+     	function getCategoriesFromRoot($categoriID)
+     	{
+     		
+     		$resultSets=mysql_query("call product_hier(". $categoriID .");");
+     	   if (!$resultSets)
+              {
+            	  error_log("stored proc error".mysql_error(),0);
+              }
+     		
+     		
+     		return $resultSets;
+     	}
+     	
+     	
+     	
+     	
+     	
+     	
+     	// get all popular swings
+     	
+     	function getAllTrending()
+     	{
+         $trendingSwings=array();	
+       
+     
+        $resultSet=mysql_query("select swingID from swing_analytics group by swingID order by count(swingID) DESC LIMIT 0,10 ");
+     	     if (!$resultSet)
+              {
+            	  error_log("swing analytics table error".mysql_error(),0);
+              }
+        
+     	$num_of_fields= mysql_num_fields($resultSet);
+     	
+     	while($row = mysql_fetch_array($resultSet))
+        {
+         
+        array_push($trendingSwings,$row['swingID']);
+      
+          
+        }
+     		
+        return $trendingSwings;
+     	}
+     	
+     	
+     	
+     	// Get recently added swings
+     	function getRecenltyAdded()
+     	{
+     		$recentSwings=array();
+     		
+     		
+     		$recentAdd=mysql_query("select swingID from swings  ORDER BY createdTime desc LIMIT 0,5");
+     	     if (!$recentAdd)
+              {
+            	  error_log("swing analytics table error".mysql_error(),0);
+              }
+     		
+     		$num_of_fields=mysql_num_fields($recentAdd);
+     		while($eachRow= mysql_fetch_array($recentAdd))
+     		{
+     			        array_push($recentSwings,$eachRow['swingID']);
+     			
+     			
+     		}
+     		     		
+     		return $recentSwings;
+     	}
+     	
+     	
+     	
+     	//Get all swings under categories
+     	function getCategorySwings()
+     	{
+     		
+           	$categories = array();
+            $result= mysql_query("SELECT * FROM category_swings order by categoryID;");
+            
+     	    if (!$result)
+              {
+            	  error_log("get categories_swings  table error".mysql_error(),0);
+              }
+            
+            while($row = mysql_fetch_array($result,MYSQL_ASSOC)){
+            $categories[$row['categoryID']][] = $row['swingID'];
+          }
+
+         return $categories;
+     		
+     	}
+     	
+     	
+     	
+     	function getTypeaheadTags($name)
+     	{
+     	
+     		
+     		$tags=array();
+     		$query="select  tagName from tags where tagName like" . '"'. $name . '%'.'"';
+     		$result=mysql_query($query);
+     		
+          	if (!$result)
+              {
+            	  error_log("tags table error ".$query,0);
+              }
+     		while($eachrow = mysql_fetch_array($result,MYSQL_ASSOC))
+     		{
+     			array_push($tags,$eachrow['tagName']);
+     			
+     		}
+     		
+     		
+     		return $tags;
+     	}
+     	
+     	
+     	function getSwingsByTagName($tagName)
+     	{
+     		$swings=array();
+     		$query="SELECT swingID from tags_swings where tagID= ANY (select tagID from  tags where tagName='".$tagName."' ) ; ";
+     		$result=mysql_query($query);
+     	    if (!$result)
+              {
+            	  error_log("selecting by tags_swings error".mysql_error().$query,0);
+              }
+     		while($eachrow = mysql_fetch_array($result,MYSQL_ASSOC))
+     		{
+     			array_push($swings,$eachrow['swingID']);
+     			
+     		}
+     		
+     		
+     		return $swings;
+     		
+     	}
+     	
+     	function insertAnalytics($swingID,$postID)
+     	{
+     		
+     		 $sql=mysql_query("INSERT INTO swing_analytics(`swingID`,`timestamp`,`postID`) VALUES($swingID,now(),'". $postID ."')");
+            
+     		 if (!$sql)
+              {
+              
+            	  error_log("insert swing_analytics  table error".mysql_error(),0);
+              
+              }
+     		
+     	return	mysql_insert_id();
+     		
+     	}
+     	
+     	
+     	function storeConversation($fromID,$toID,$friendName,$message,$swingID,$postID)
+     	{
+     		$analyticID=$this->insertAnalytics($swingID,$postID);
+     		
+            $query= 'INSERT INTO `facebookswings`.`conversation`(`fromID`,`swingID`,`toID`,`timeStamp`,`message`,`friendName`,`analyticID`)VALUES('.$fromID.','.$swingID.','.$toID.',NOW(),'.'" '.$message.'"'.','.'"'.$friendName.'"'.','.$analyticID.')';
+     	  
+            
+     		$sql=mysql_query($query);
+     		
+     		 if (!$sql)
+              {
+            	  error_log("insert conversation table error".$query,0);
+              }
+     		 
+              
+     		unset($sql);
+     	}
+     	
+     	function getRecievedSwings($userID)
+     	{
+     		$swings=array();
+     		$query="select c.fromID as senderID,c.swingID as swingID,c.toID as recieverID,c.timeStamp,c.message,c.friendName as recieverName,user1.fullName as senderName,p.postID from conversation c,fbuser user1,swing_analytics p where (user1.userID=c.fromID) &&  c.toID=".$userID ." && c.analyticID=p.analyticID";
+     		//$query="select c.fromID as senderID,c.swingID as swingID,c.toID as recieverID,c.timeStamp,c.message,c.friendName as recieverName,user1.fullName as senderName from conversation c,fbuser user1 where (user1.userID=c.fromID) &&  c.toID=".$userID;
+     		$result=mysql_query($query);
+     	   if (!$result)
+              {
+            	  error_log("table recieved swings error".mysql_error(),0);
+              }
+     		
+     		while($eachrow = mysql_fetch_array($result,MYSQL_ASSOC))
+     		{
+     			array_push($swings,$eachrow);
+     			
+     		}
+     		
+     		
+     		return $swings;
+     		
+     		
+     		
+     	}
+     	
+     	
+     	
+     	function getSentSwings($userID)
+     	{
+     		$swings=array();
+     		$query="select c.fromID as senderID,c.swingID as swingID,c.toID as recieverID,c.timeStamp,c.message,c.friendName as recieverName,user1.fullName as senderName,p.postID from conversation c,fbuser user1,swing_analytics p where (user1.userID=c.fromID) &&  c.fromID=".$userID ." && c.analyticID=p.analyticID";
+     		$result=mysql_query($query);
+     		
+     	 if (!$result)
+              {
+            	  error_log("table sent swings error".mysql_error(),0);
+              }
+     		while($eachrow = mysql_fetch_array($result,MYSQL_ASSOC))
+     		{
+     			array_push($swings,$eachrow);
+     			
+     		}
+     		
+     		
+     		return $swings;
+     		
+     		
+     	}
+     	
+     	
+     	function getAllFromInbox($userID)
+     	{
+     		
+     		$swings=array();
+     		$query="select c.fromID as senderID,c.swingID as swingID,c.toID as recieverID,c.timeStamp,c.message,c.friendName as recieverName,user1.fullName as senderName,s.postID from conversation c,fbuser user1,swing_analytics s where (user1.userID=c.fromID) && ( c.fromID=".$userID." OR c.toID=".$userID.") && s.analyticID=c.analyticID;";
+     		$result=mysql_query($query);
+     		
+     	    if (!$result)
+              {
+            	  error_log("get all  swings for swing box error".mysql_error(),0);
+              }
+     		
+     		
+     		while($eachrow = mysql_fetch_array($result,MYSQL_ASSOC))
+     		{
+     			array_push($swings,$eachrow);
+     			
+     		}
+     		
+     		
+     		return $swings;
+     		
+     	}
+     	
+     	
+     	function inboxFilterByFriend($userID,$friendName)
+     	{
+     		
+     		$query="select c.fromID as senderID,c.swingID as swingID,c.toID as recieverID,c.timeStamp,c.message,c.friendName as recieverName,user1.fullName as senderName,s.postID from conversation c,fbuser user1,swing_analytics s where (user1.userID=c.fromID) && ( c.fromID=".$userID." OR c.toID=".$userID.") && s.analyticID=c.analyticID && (friendName like ".'"'.$friendName.'%"'."OR user1.fullName like".'"'.$friendName.'%")'; 
+     		
+     	    $swings=array();
+     		$result=mysql_query($query);
+     		
+     	    if (!$result)
+              {
+            	  error_log("filter by friend error: ".mysql_error(),0);
+              }
+     		
+     		
+     		while($eachrow = mysql_fetch_array($result,MYSQL_ASSOC))
+     		{
+     			array_push($swings,$eachrow);
+     			
+     		}
+     		
+     		
+     		return $swings;
+     		
+     		
+     	}
+     	
+     	
+     	
+     	
+     	// close connection to database
+     	function closeConnection()
+     	{
+     		MysqlFactory::closeConnection();
+     	}
+     	
+     	
+     	
+     	
+     	
+     }
+
+
+?>
